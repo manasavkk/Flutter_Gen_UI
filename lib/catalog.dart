@@ -4,11 +4,11 @@ import 'package:json_schema_builder/json_schema_builder.dart';
 
 /// Builds the catalog of widgets the model is allowed to generate.
 Catalog buildCatalog() => BasicCatalogItems.asCatalog().copyWith(
-  newItems: [checkpointCard, funFactCard],
+  newItems: [checkpointCard],
 );
 
-/// A road-trip I-Spy checkpoint card — content only, no button.
-/// Player buttons are rendered by Flutter outside the surface.
+/// A road-trip I-Spy checkpoint card.
+/// Rendered directly from [kCheckpoints] data — not via AI — for instant load.
 final checkpointCard = CatalogItem(
   name: 'CheckpointCard',
   dataSchema: Schema.fromMap({
@@ -18,16 +18,15 @@ final checkpointCard = CatalogItem(
       'landmark': {'type': 'string'},
       'hint': {'type': 'string'},
       'points': {'type': 'integer'},
-      'checkpoint_id': {'type': 'string'},
     },
-    'required': ['emoji', 'landmark', 'hint', 'points', 'checkpoint_id'],
+    'required': ['emoji', 'landmark', 'hint', 'points'],
   }),
   widgetBuilder: (itemContext) {
     final data = itemContext.data as JsonMap;
     final emoji = (data['emoji'] as String?) ?? '📍';
     final landmark = (data['landmark'] as String?) ?? '';
     final hint = (data['hint'] as String?) ?? '';
-    final points = (data['points'] as int?) ?? 10;
+    final points = (data['points'] as int?) ?? 20;
 
     return Container(
       width: double.infinity,
@@ -92,62 +91,6 @@ final checkpointCard = CatalogItem(
               fontSize: 15,
               height: 1.4,
             ),
-          ),
-        ],
-      ),
-    );
-  },
-);
-
-/// Fun fact card revealed after a landmark is spotted.
-final funFactCard = CatalogItem(
-  name: 'FunFactCard',
-  dataSchema: Schema.fromMap({
-    'type': 'object',
-    'properties': {
-      'emoji': {'type': 'string'},
-      'landmark': {'type': 'string'},
-      'fact': {'type': 'string'},
-    },
-    'required': ['emoji', 'landmark', 'fact'],
-  }),
-  widgetBuilder: (itemContext) {
-    final data = itemContext.data as JsonMap;
-    final emoji = (data['emoji'] as String?) ?? '✨';
-    final landmark = (data['landmark'] as String?) ?? '';
-    final fact = (data['fact'] as String?) ?? '';
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A2218),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.greenAccent.withOpacity(0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Text(emoji, style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  landmark,
-                  style: const TextStyle(
-                    color: Colors.greenAccent,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            fact,
-            style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.45),
           ),
         ],
       ),

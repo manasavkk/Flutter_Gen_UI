@@ -1,9 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:genui/genui.dart';
-import 'package:genui_template/conversation.dart';
-import 'package:genui_template/model/featherless_model_client.dart';
 import 'package:genui_template/prompt.dart';
 import 'package:genui_template/services/leaderboard_service.dart';
 
@@ -36,9 +33,6 @@ class _HomePageState extends State<HomePage> {
   List<String> _players = [];
   Map<String, int> _scores = {};
 
-  // ── Sessions ─────────────────────────────────────────────────────────────────
-  // _gameSession removed — checkpoint cards render directly from kCheckpoints data.
-  GenUiSession? _factSession; // fun facts only
 
   // ── Checkpoint state ─────────────────────────────────────────────────────────
   int _shownIndex = -1;      // which checkpoint is currently displayed
@@ -70,7 +64,6 @@ class _HomePageState extends State<HomePage> {
     for (final c in _nameCtrl) c.dispose();
     _leaderboardSub?.cancel();
     _timer?.cancel();
-    _factSession?.dispose();
     super.dispose();
   }
 
@@ -149,7 +142,6 @@ class _HomePageState extends State<HomePage> {
     });
 
     _leaderboard.upsertScore(playerName, _scores[playerName]!);
-    _generateFact(cp.landmark, cp.emoji);
 
     // Queue the next checkpoint after a short celebration delay
     if (_nextToShow < kCheckpoints.length) {
@@ -164,25 +156,12 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _generateFact(String landmark, String emoji) {
-    _factSession ??= GenUiSession(
-      modelClientBuilder: FeatherlessModelClient.new,
-      systemPromptText: buildFactSystemPrompt(),
-    );
-    _factSession!.sendMessage(
-      'Generate a FunFactCard for $landmark (emoji: $emoji).',
-    );
-    setState(() {});
-  }
-
   void _resetJourney() {
     _timer?.cancel();
     _leaderboardSub?.cancel();
-    _factSession?.dispose();
     setState(() {
       _journeyStarted = false;
       _rideStarted = false;
-      _factSession = null;
       _scores = {};
       _liveScores = [];
       _elapsed = 0;
@@ -504,54 +483,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // AI-generated fun fact (shown after a spot)
-          if (_factSession != null)
-            ValueListenableBuilder<ConversationState>(
-              valueListenable: _factSession!.conversationState,
-              builder: (ctx, factState, _) {
-                final fid = factState.surfaces.isNotEmpty
-                    ? factState.surfaces.last
-                    : null;
-                if (fid == null) {
-                  // Still generating — show a subtle shimmer
-                  if (factState.isWaiting) {
-                    return Column(children: [
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('✨  LOADING FUN FACT…',
-                            style: TextStyle(color: Colors.greenAccent,
-                                fontSize: 9, letterSpacing: 2.5,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(
-                        backgroundColor: Colors.transparent,
-                        color: Colors.greenAccent.withOpacity(0.4),
-                        minHeight: 2,
-                      ),
-                      const SizedBox(height: 20),
-                    ]);
-                  }
-                  return const SizedBox.shrink();
-                }
-                return Column(children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('✨  LATEST DISCOVERY',
-                        style: TextStyle(color: Colors.greenAccent,
-                            fontSize: 9, letterSpacing: 2.5,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                  const SizedBox(height: 8),
-                  Surface(surfaceContext: _factSession!.contextFor(fid)),
-                  const SizedBox(height: 20),
-                  Container(height: 1, color: Colors.white12),
-                  const SizedBox(height: 16),
-                ]);
-              },
-            ),
-
-          // Main checkpoint card — rendered directly from kCheckpoints (no AI needed)
+          // Checkpoint card — rendered directly from kCheckpoints for instant load
           if (_shownIndex < 0)
             _waitingWidget('Get ready…')
           else
