@@ -23,7 +23,7 @@ class FeatherlessModelClient extends ModelClient {
 
   // HuggingFace-style org/model slug. Strong instruction-following for A2UI's
   // structured output. Override via constructor or --dart-define.
-  static const String _defaultModel = 'Qwen/Qwen2.5-72B-Instruct';
+  static const String _defaultModel = 'Qwen/Qwen2.5-14B-Instruct';
 
   // API key supplied at build time via
   // `flutter run --dart-define=FEATHERLESS_API_KEY=...`.
@@ -43,6 +43,8 @@ class FeatherlessModelClient extends ModelClient {
           ChatMessage.system(systemPrompt),
           ...history.map(_toMessage),
         ],
+        maxTokens: 500,       // CreateSurface + UpdateComponents for one card ~300 tokens
+        temperature: 0.3,     // more deterministic = faster to converge
       ),
     );
 
