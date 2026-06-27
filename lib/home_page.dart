@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:genui/genui.dart';
+import 'package:genui_template/conversation.dart';
+import 'package:genui_template/model/featherless_model_client.dart';
 import 'package:genui_template/prompt.dart';
 import 'package:genui_template/services/leaderboard_service.dart';
 
@@ -33,6 +36,10 @@ class _HomePageState extends State<HomePage> {
   List<String> _players = [];
   Map<String, int> _scores = {};
 
+  // ── GenUI session ─────────────────────────────────────────────────────────────
+  // auto-surface mode: we inject createSurface("game") before each model turn,
+  // so the model only needs to emit updateComponents — which it reliably does.
+  GenUiSession? _gameSession;
 
   // ── Checkpoint state ─────────────────────────────────────────────────────────
   int _shownIndex = -1;      // which checkpoint is currently displayed
@@ -64,6 +71,7 @@ class _HomePageState extends State<HomePage> {
     for (final c in _nameCtrl) c.dispose();
     _leaderboardSub?.cancel();
     _timer?.cancel();
+    _gameSession?.dispose();
     super.dispose();
   }
 
@@ -90,7 +98,16 @@ class _HomePageState extends State<HomePage> {
       (s) { if (mounted) setState(() => _liveScores = s); },
     );
 
-    // Show first checkpoint immediately — no AI call needed.
+    // Build the GenUI session in auto-surface mode.
+    // We inject createSurface("game") before each turn so the model only needs
+    // to emit updateComponents — which Qwen reliably does.
+    _gameSession = GenUiSession(
+      modelClientBuilder: FeatherlessModelClient.new,
+      systemPromptText: buildGameSystemPrompt(names),
+      autoSurfaceId: 'game',
+    );
+
+    // Pre-load checkpoint 1 immediately — visible before the ride starts.
     _sendCheckpoint(0, previousStatus: null);
     // Timer begins only when user presses "Start Ride"
   }
@@ -116,7 +133,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// Advances the displayed checkpoint. No AI call — renders directly from kCheckpoints.
+  /// Sends the current checkpoint to the GenUI session for live AI rendering.
   void _sendCheckpoint(int index, {required String? previousStatus}) {
     if (index >= kCheckpoints.length) return;
     setState(() {
@@ -125,6 +142,9 @@ class _HomePageState extends State<HomePage> {
       _currentSpotted = false;
       _spottedBy = null;
     });
+    _gameSession?.sendMessage(
+      buildCheckpointMessage(index, previousStatus: previousStatus),
+    );
   }
 
   // ─── Spot handling ────────────────────────────────────────────────────────────
@@ -159,9 +179,11 @@ class _HomePageState extends State<HomePage> {
   void _resetJourney() {
     _timer?.cancel();
     _leaderboardSub?.cancel();
+    _gameSession?.dispose();
     setState(() {
       _journeyStarted = false;
       _rideStarted = false;
+      _gameSession = null;
       _scores = {};
       _liveScores = [];
       _elapsed = 0;
@@ -478,27 +500,106 @@ class _HomePageState extends State<HomePage> {
       );
 
   Widget _buildCardArea() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+    if (_gameSession == null) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent, strokeWidth: 1.5),
+      );
+    }
+
+    return ValueListenableBuilder<ConversationState>(
+      valueListenable: _gameSession!.conversationState,
+      builder: (context, state, _) {
+        // 'game' surface exists once createSurface has been processed
+        final surfaceReady = state.surfaces.contains('game');
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_shownIndex < 0)
+                _waitingWidget('Get ready…')
+              else if (_currentSpotted)
+                _buildSpottedOverlay()
+              else ...[
+                // Thin progress bar while AI is streaming
+                if (state.isWaiting)
+                  LinearProgressIndicator(
+                    backgroundColor: Colors.transparent,
+                    color: Colors.cyanAccent.withOpacity(0.5),
+                    minHeight: 2,
+                  ),
+                const SizedBox(height: 4),
+                // Show AI-generated Surface once ready, otherwise Flutter fallback
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  child: surfaceReady
+                      ? Surface(
+                          key: const ValueKey('game'),
+                          surfaceContext: _gameSession!.contextFor('game'),
+                        )
+                      : _buildCheckpointFallback(_shownIndex),
+                ),
+              ],
+
+              const SizedBox(height: 20),
+
+              if (_rideStarted && _shownIndex >= 0 && !_currentSpotted)
+                _buildPlayerButtons(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Flutter-rendered fallback shown for the ~1-2 s before the AI surface arrives.
+  Widget _buildCheckpointFallback(int index) {
+    final cp = kCheckpoints[index];
+    return Container(
+      key: ValueKey('fallback_$index'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A2855), Color(0xFF251050)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.cyanAccent.withOpacity(0.25), width: 1.5),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Checkpoint card — rendered directly from kCheckpoints for instant load
-          if (_shownIndex < 0)
-            _waitingWidget('Get ready…')
-          else
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              child: _currentSpotted
-                  ? _buildSpottedOverlay()
-                  : _buildCheckpointCard(_shownIndex),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text(cp.emoji, style: const TextStyle(fontSize: 56)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.amberAccent.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.amberAccent.withOpacity(0.4)),
+              ),
+              child: Text('+${cp.points} pts',
+                  style: const TextStyle(
+                      color: Colors.amberAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
             ),
-
+          ]),
           const SizedBox(height: 20),
-
-          // Per-player spot buttons (only while ride is running and card not yet spotted)
-          if (_rideStarted && _shownIndex >= 0 && !_currentSpotted)
-            _buildPlayerButtons(),
+          Text(cp.landmark,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 26,
+                  letterSpacing: -0.5)),
+          const SizedBox(height: 8),
+          Text(cp.hint,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.6), fontSize: 15, height: 1.4)),
         ],
       ),
     );

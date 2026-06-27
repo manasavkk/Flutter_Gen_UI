@@ -33,3 +33,26 @@ const List<({String landmark, String emoji, String hint, int points})>
     points: 20,
   ),
 ];
+
+/// System prompt for the checkpoint card session.
+///
+/// The session uses auto-surface mode — a `createSurface` for "game" is
+/// injected before every model response, so the model only needs to emit
+/// `updateComponents`. Keep this prompt minimal and focused.
+String buildGameSystemPrompt(List<String> playerNames) => '''
+You render I-Spy checkpoint cards for ${playerNames.join(' and ')} on a road trip from Salesforce Tower to Ocean Beach in San Francisco.
+
+For each request output EXACTLY ONE `updateComponents` JSON block for surfaceId "game".
+The root component must be a Column containing a single CheckpointCard.
+Use the emoji, landmark, hint, and points values exactly as given.
+Output only the JSON block — no explanation, no other text.
+''';
+
+/// Builds the user message for a given checkpoint index.
+String buildCheckpointMessage(int index, {String? previousStatus}) {
+  final cp = kCheckpoints[index];
+  final prefix = previousStatus != null ? '$previousStatus. ' : '';
+  return '${prefix}Show checkpoint ${index + 1}: '
+      'emoji "${cp.emoji}", landmark "${cp.landmark}", '
+      'hint "${cp.hint}", points ${cp.points}.';
+}
